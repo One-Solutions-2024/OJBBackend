@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
+// Add stealth plugin
 puppeteer.use(StealthPlugin());
 
 const app = express();
@@ -13,9 +14,10 @@ const port = process.env.PORT || 5000;
 
 // Configure PostgreSQL connection
 const pool = new Pool({
-  connectionString: "postgresql://xrjobs_a6uj_user:Vz93DhcEDKnqSS6GvESW8Y3NcjFzIa88@dpg-cv56lcnnoe9s73eec820-a.oregon-postgres.render.com/xrjobs_a6uj",
+  connectionString: process.env.DATABASE_URL || "postgresql://xrjobs_a6uj_user:Vz93DhcEDKnqSS6GvESW8Y3NcjFzIa88@dpg-cv56lcnnoe9s73eec820-a.oregon-postgres.render.com/xrjobs_a6uj",
   ssl: { rejectUnauthorized: false }
 });
+
 
 // Create jobs table
 const initializeDB = async () => {
@@ -125,6 +127,11 @@ function isFresherJob(title) {
 }
 
 // Enhanced scraping function
+// Add these environment variables for Render
+process.env.PUPPETEER_CACHE_DIR = '/opt/render/.cache/puppeteer';
+process.env.PUPPETEER_SKIP_DOWNLOAD = 'true';
+
+// Updated scraping function with Render-specific config
 const scrapeJobs = async () => {
   let browser;
   let totalJobs = 0;
@@ -136,8 +143,13 @@ const scrapeJobs = async () => {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled'
-      ]
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
     });
 
     const page = await browser.newPage();
