@@ -137,7 +137,8 @@ const scrapeJobs = async () => {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-blink-features=AutomationControlled'
-      ]
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || await puppeteer.executablePath()
     });
 
     const page = await browser.newPage();
