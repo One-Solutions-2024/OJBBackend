@@ -1,4 +1,3 @@
-// backend/server.js
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -12,7 +11,7 @@ const port = process.env.PORT || 5000;
 
 // Configure PostgreSQL connection
 const pool = new Pool({
-  connectionString: "postgresql://xrjobs_3r6m_user:S0n3q4FUOskQvSibTufSeh5zSMM2L81f@dpg-cv5s0man91rc73b82dqg-a.oregon-postgres.render.com/xrjobs_3r6m",
+  connectionString: "postgresql://xrjobs_86m6_user:STNmncv6h82vs7EOMxFbLymeoiteotZY@dpg-cv5uatan91rc73b8r3g0-a.oregon-postgres.render.com/xrjobs_86m6",
   ssl: { rejectUnauthorized: false }
 });
 
@@ -38,7 +37,7 @@ const initializeDB = async () => {
   }
 };
 
-// Updated LinkedIn Parser with improved company image handling
+// Improved LinkedIn Parser with proper image handling
 const linkedInParser = async (html) => {
   try {
     const $ = cheerio.load(html);
@@ -51,7 +50,7 @@ const linkedInParser = async (html) => {
         const location = $(el).find('.job-search-card__location').text().trim();
         const rawUrl = $(el).find('.base-card__full-link').attr('href');
         
-        // Improved image extraction: prioritize data-delayed-url first
+        // Improved image handling
         const logoElement = $(el).find('.base-search-card__logo img');
         let companyImage = 
           logoElement.attr('data-delayed-url') ||
@@ -59,16 +58,22 @@ const linkedInParser = async (html) => {
           logoElement.attr('src');
 
         if (companyImage) {
-          // If URL is relative, convert to absolute using LinkedIn domain
-          if (!companyImage.startsWith('http')) {
-            companyImage = `https://www.linkedin.com${companyImage}`;
+          // Handle LinkedIn's image CDN properly
+          if (companyImage.startsWith('/')) {
+            if (companyImage.startsWith('/dms/image')) {
+              companyImage = `https://media.licdn.com${companyImage}`;
+            } else {
+              companyImage = `https://www.linkedin.com${companyImage}`;
+            }
           }
-          // Force HTTPS and remove duplicate slashes (except after protocol)
-          companyImage = companyImage.replace(/^http:/, 'https:').replace(/([^:]\/)\/+/g, '$1');
-          // Keep query parameters intact since they may be needed for image delivery
+          
+          // Ensure HTTPS and clean URL
+          companyImage = companyImage.replace(/^http:/, 'https:')
+            .replace(/([^:]\/)\/+/g, '$1')
+            .split('?')[0];
         }
 
-        // Normalize job posting URL by removing unnecessary query parameters
+        // Normalize job URL
         const urlObj = new URL(rawUrl);
         urlObj.searchParams.delete('refId');
         urlObj.searchParams.delete('trackingId');
@@ -92,7 +97,7 @@ const linkedInParser = async (html) => {
       }
     });
 
-    return jobs.slice(0, 15);
+    return jobs;
   } catch (err) {
     console.error('LinkedIn parser error:', err);
     return [];
@@ -101,24 +106,24 @@ const linkedInParser = async (html) => {
 
 // Fresher job check
 function isFresherJob(title) {
-  return /(fresher|entry-level|0-1 year|0-\s*1 year)/i.test(title);
+  return /(fresher|entry[\s-]level|0\s*-\s*1\s*year|junior)/i.test(title);
 }
 
-// LinkedIn configuration
+// Job sources configuration with pagination
 const jobSources = [
   {
     name: 'LinkedIn Developers',
-    url: 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=software%2Bdeveloper%2Bfresher&location=India&position=1&pageNum=0',
-    parser: linkedInParser
+    baseParams: 'keywords=software%2Bdeveloper%2B(fresher%20OR%20entry%20level)&location=India',
+    pages: 3
   },
   {
     name: 'LinkedIn Testers',
-    url: 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=(qa%2Btester%2Bfresher)%20OR%20(quality%2Bassurance%2Bfresher)&location=India&position=1&pageNum=0',
-    parser: linkedInParser
+    baseParams: 'keywords=(qa%2Btester%2B(fresher%20OR%20entry%20level))%20OR%20(quality%2Bassurance%2B(fresher%20OR%20entry%20level))&location=India',
+    pages: 3
   }
 ];
 
-// Enhanced scraping function with delays and rotation
+// Enhanced scraping with pagination
 const scrapeJobs = async () => {
   let totalJobs = 0;
   const userAgents = [
@@ -130,56 +135,54 @@ const scrapeJobs = async () => {
     for (const source of jobSources) {
       console.log(`[Scraper] Scraping ${source.name}...`);
       
-      try {
-        const response = await axios.get(source.url, {
-          headers: {
-            'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.linkedin.com/jobs/search/'
-          },
-          timeout: 15000
-        });
+      for (let page = 0; page < source.pages; page++) {
+        const start = page * 25;
+        const url = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?${source.baseParams}&start=${start}`;
 
-        const jobs = await source.parser(response.data);
-        console.log(`Parsed ${jobs.length} jobs from ${source.name}`);
+        try {
+          const response = await axios.get(url, {
+            headers: {
+              'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.linkedin.com/jobs/search/'
+            },
+            timeout: 15000
+          });
 
-        for (const job of jobs) {
-          try {
-            // Check for existing URL
-            const existing = await pool.query(
-              'SELECT 1 FROM jobs WHERE url = $1', 
-              [job.url]
-            );
+          const jobs = await linkedInParser(response.data);
+          console.log(`Parsed ${jobs.length} jobs from ${source.name} page ${page + 1}`);
+
+          for (const job of jobs) {
+            try {
+              const existing = await pool.query(
+                'SELECT 1 FROM jobs WHERE url = $1', 
+                [job.url]
+              );
+              
+              if (existing.rows.length > 0) continue;
+
+              const result = await pool.query(
+                `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [job.title, job.company, job.company_image, job.location, job.url, job.date_posted, job.source]
+              );
+
+              if (result.rowCount > 0) {
+                totalJobs++;
+                console.log(`Added: ${job.title} - ${job.company}`);
+              }
+            } catch (err) {
+              console.error(`Database error for ${job.url}:`, err.message);
+            }
             
-            if (existing.rows.length > 0) {
-              console.log(`Skipping duplicate: ${job.url}`);
-              continue;
-            }
-
-            // Insert new job with company image
-            const result = await pool.query(
-              `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [job.title, job.company, job.company_image, job.location, job.url, job.date_posted, job.source]
-            );
-
-            if (result.rowCount > 0) {
-              totalJobs++;
-              console.log(`Added: ${job.title} - ${job.company}`);
-            }
-          } catch (err) {
-            console.error(`Database error for ${job.url}:`, err.message);
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
-          
-          // Add delay between inserts
-          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.error(`[Scraper] Error fetching page ${page + 1}:`, error.message);
         }
-      } catch (error) {
-        console.error(`[Scraper] Error fetching ${source.name}:`, error.message);
+        
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
-
-      // Add delay between sources
-      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   } catch (error) {
     console.error('[Scraper] Global error:', error.message);
@@ -189,40 +192,14 @@ const scrapeJobs = async () => {
   return totalJobs;
 };
 
-// Server setup with test endpoint
+// Server setup
 const startServer = async () => {
   await initializeDB();
   
   app.use(cors());
   app.use(express.json());
 
-  // Test DB endpoint
-  app.get('/api/test-db', async (req, res) => {
-    try {
-      const testJob = {
-        title: `Test Job ${Date.now()}`,
-        company: 'Test Company',
-        company_image: 'https://via.placeholder.com/100',
-        location: 'Remote',
-        url: `https://example.com/test-${Date.now()}`,
-        date_posted: new Date().toISOString(),
-        source: 'Test'
-      };
-
-      await pool.query(
-        `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        Object.values(testJob)
-      );
-
-      res.json({ success: true, message: 'Test job inserted' });
-    } catch (err) {
-      console.error('Test DB Error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Jobs endpoints
+  // Jobs endpoint with improved filtering
   app.get('/api/jobs', async (req, res) => {
     try {
       const { rows } = await pool.query(`
@@ -239,9 +216,10 @@ const startServer = async () => {
             '%manual testing%',
             '%automation testing%',
             '%test engineer%',
-            '%sdet%'
+            '%sdet%',
+            '%junior%'
           ]) AND
-          title ILIKE ANY(ARRAY['%fresher%', '%entry level%', '%0-1 years%'])
+          title ~* '\\y(fresher|entry\\s*level|0\\s*-\\s*1\\s*year|junior)\\y'
         ORDER BY created_at DESC
         LIMIT 100
       `);
@@ -265,7 +243,7 @@ const startServer = async () => {
   app.listen(port, () => {
     console.log(`[Server] Running on port ${port}`);
     
-    // Initial scrape with cleanup option
+    // Initial cleanup and scrape
     pool.query('TRUNCATE TABLE jobs RESTART IDENTITY')
       .then(() => {
         console.log('[DB] Table truncated for fresh start');
@@ -273,8 +251,8 @@ const startServer = async () => {
       })
       .catch(err => console.error('[DB] Truncate error:', err));
 
-    // Regular scraping schedule
-    cron.schedule('0 */1 * * *', () => {
+    // Hourly scraping
+    cron.schedule('0 * * * *', () => {
       console.log('[Cron] Starting scheduled scrape');
       scrapeJobs();
     });
