@@ -25,7 +25,7 @@ const initializeDB = async () => {
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         company VARCHAR(255) NOT NULL,
-        company_image VARCHAR(255),
+        company_image TEXT,
         location VARCHAR(255),
         url VARCHAR(255) UNIQUE NOT NULL,
         date_posted VARCHAR(50),
