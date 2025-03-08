@@ -38,7 +38,7 @@ const initializeDB = async () => {
   }
 };
 
-// LinkedIn parser function
+// backend/server.js - Updated LinkedIn Parser
 const linkedInParser = async (html) => {
   try {
     const $ = cheerio.load(html);
@@ -46,13 +46,38 @@ const linkedInParser = async (html) => {
     
     $('li').each((i, el) => {
       try {
-        const title = $(el).find('.base-search-card__title').text().trim();
-        const company = $(el).find('.base-search-card__subtitle').text().trim();
-        const location = $(el).find('.job-search-card__location').text().trim();
-        const rawUrl = $(el).find('.base-card__full-link').attr('href');
-        const companyImage = $(el).find('.base-search-card__logo img').attr('data-delayed-url') || 
-                             $(el).find('.base-search-card__logo img').attr('src');
+        // ... existing code ...
+        
+        // Extract company logo with improved handling
+        const logoElement = $(el).find('.base-search-card__logo img');
+        let companyImage = 
+          logoElement.attr('data-ghost-url') ||
+          logoElement.attr('data-delayed-url') || 
+          logoElement.attr('src');
 
+        if (companyImage) {
+          // Handle relative URLs
+          if (!companyImage.startsWith('http')) {
+            companyImage = `https://www.linkedin.com${companyImage}`;
+          }
+
+          // Normalize image URL
+          companyImage = companyImage
+            .replace(/\?.*/, '') // Remove query params
+            // Handle multiple shrink formats
+            .replace(/\/shrink[-_/]\d+[-_/]\d+\//gi, '/')
+            // Remove other size parameters
+            .replace(/\/[\w-]+_[\d-]+-[\d-]+/, '')
+            // Normalize protocol
+            .replace(/^http:/, 'https:')
+            // Clean duplicate slashes
+            .replace(/([^:]\/)\/+/g, '$1');
+
+          // Special case for LinkedIn CDN
+          if (companyImage.includes('media.licdn.com')) {
+            companyImage = companyImage.split('?')[0];
+          }
+        }
         // Normalize URL
         const urlObj = new URL(rawUrl);
         urlObj.searchParams.delete('refId');
@@ -65,7 +90,7 @@ const linkedInParser = async (html) => {
           jobs.push({
             title,
             company: company.replace(/·\s*/, ''),
-            company_image: companyImage,
+            company_image: companyImage || null,
             location,
             url: cleanUrl,
             date_posted: datePosted,
