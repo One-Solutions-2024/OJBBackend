@@ -38,7 +38,7 @@ const initializeDB = async () => {
   }
 };
 
-// backend/server.js - Updated LinkedIn Parser
+// Updated LinkedIn Parser with improved company image handling
 const linkedInParser = async (html) => {
   try {
     const $ = cheerio.load(html);
@@ -46,39 +46,29 @@ const linkedInParser = async (html) => {
     
     $('li').each((i, el) => {
       try {
-        // ... existing code ...
+        const title = $(el).find('.base-search-card__title').text().trim();
+        const company = $(el).find('.base-search-card__subtitle').text().trim().replace(/·\s*/, '');
+        const location = $(el).find('.job-search-card__location').text().trim();
+        const rawUrl = $(el).find('.base-card__full-link').attr('href');
         
-        // Extract company logo with improved handling
+        // Improved image extraction: prioritize data-delayed-url first
         const logoElement = $(el).find('.base-search-card__logo img');
         let companyImage = 
+          logoElement.attr('data-delayed-url') ||
           logoElement.attr('data-ghost-url') ||
-          logoElement.attr('data-delayed-url') || 
           logoElement.attr('src');
 
         if (companyImage) {
-          // Handle relative URLs
+          // If URL is relative, convert to absolute using LinkedIn domain
           if (!companyImage.startsWith('http')) {
             companyImage = `https://www.linkedin.com${companyImage}`;
           }
-
-          // Normalize image URL
-          companyImage = companyImage
-            .replace(/\?.*/, '') // Remove query params
-            // Handle multiple shrink formats
-            .replace(/\/shrink[-_/]\d+[-_/]\d+\//gi, '/')
-            // Remove other size parameters
-            .replace(/\/[\w-]+_[\d-]+-[\d-]+/, '')
-            // Normalize protocol
-            .replace(/^http:/, 'https:')
-            // Clean duplicate slashes
-            .replace(/([^:]\/)\/+/g, '$1');
-
-          // Special case for LinkedIn CDN
-          if (companyImage.includes('media.licdn.com')) {
-            companyImage = companyImage.split('?')[0];
-          }
+          // Force HTTPS and remove duplicate slashes (except after protocol)
+          companyImage = companyImage.replace(/^http:/, 'https:').replace(/([^:]\/)\/+/g, '$1');
+          // Keep query parameters intact since they may be needed for image delivery
         }
-        // Normalize URL
+
+        // Normalize job posting URL by removing unnecessary query parameters
         const urlObj = new URL(rawUrl);
         urlObj.searchParams.delete('refId');
         urlObj.searchParams.delete('trackingId');
@@ -89,7 +79,7 @@ const linkedInParser = async (html) => {
         if (isFresherJob(title)) {
           jobs.push({
             title,
-            company: company.replace(/·\s*/, ''),
+            company,
             company_image: companyImage || null,
             location,
             url: cleanUrl,
@@ -284,7 +274,7 @@ const startServer = async () => {
       .catch(err => console.error('[DB] Truncate error:', err));
 
     // Regular scraping schedule
-    cron.schedule('0 */3 * * *', () => {
+    cron.schedule('0 */1 * * *', () => {
       console.log('[Cron] Starting scheduled scrape');
       scrapeJobs();
     });
