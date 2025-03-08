@@ -38,7 +38,7 @@ const initializeDB = async () => {
   }
 };
 
-// LinkedIn parser function (moved up)
+// LinkedIn parser function
 const linkedInParser = async (html) => {
   try {
     const $ = cheerio.load(html);
@@ -50,7 +50,9 @@ const linkedInParser = async (html) => {
         const company = $(el).find('.base-search-card__subtitle').text().trim();
         const location = $(el).find('.job-search-card__location').text().trim();
         const rawUrl = $(el).find('.base-card__full-link').attr('href');
-        
+        const companyImage = $(el).find('.base-search-card__logo img').attr('data-delayed-url') || 
+                             $(el).find('.base-search-card__logo img').attr('src');
+
         // Normalize URL
         const urlObj = new URL(rawUrl);
         urlObj.searchParams.delete('refId');
@@ -63,6 +65,7 @@ const linkedInParser = async (html) => {
           jobs.push({
             title,
             company: company.replace(/·\s*/, ''),
+            company_image: companyImage,
             location,
             url: cleanUrl,
             date_posted: datePosted,
@@ -81,12 +84,12 @@ const linkedInParser = async (html) => {
   }
 };
 
-// Fresher job check (moved up)
+// Fresher job check
 function isFresherJob(title) {
   return /(fresher|entry-level|0-1 year|0-\s*1 year)/i.test(title);
 }
 
-// LinkedIn configuration (now after parser declaration)
+// LinkedIn configuration
 const jobSources = [
   {
     name: 'LinkedIn Developers',
@@ -138,11 +141,11 @@ const scrapeJobs = async () => {
               continue;
             }
 
-            // Insert new job
+            // Insert new job with company image
             const result = await pool.query(
-              `INSERT INTO jobs (title, company, location, url, date_posted, source)
-               VALUES ($1, $2, $3, $4, $5, $6)`,
-              [job.title, job.company, job.location, job.url, job.date_posted, job.source]
+              `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [job.title, job.company, job.company_image, job.location, job.url, job.date_posted, job.source]
             );
 
             if (result.rowCount > 0) {
@@ -184,6 +187,7 @@ const startServer = async () => {
       const testJob = {
         title: `Test Job ${Date.now()}`,
         company: 'Test Company',
+        company_image: 'https://via.placeholder.com/100',
         location: 'Remote',
         url: `https://example.com/test-${Date.now()}`,
         date_posted: new Date().toISOString(),
@@ -191,8 +195,8 @@ const startServer = async () => {
       };
 
       await pool.query(
-        `INSERT INTO jobs (title, company, location, url, date_posted, source)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         Object.values(testJob)
       );
 
@@ -207,7 +211,7 @@ const startServer = async () => {
   app.get('/api/jobs', async (req, res) => {
     try {
       const { rows } = await pool.query(`
-        SELECT id, title, company, location, url, date_posted, source
+        SELECT id, title, company, company_image, location, url, date_posted, source
         FROM jobs 
         WHERE
           location ILIKE '%india%' AND
