@@ -7,10 +7,7 @@
     "express": "^4.21.2",
     "node-cron": "^3.0.3",
     "pg": "^8.13.3",
-    "proxy-chain": "^2.5.6",
-    "puppeteer": "^21.6.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "proxy-chain": "^2.5.6"
   },
   "name": "backend",
   "version": "1.0.0",
