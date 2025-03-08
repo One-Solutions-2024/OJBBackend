@@ -38,58 +38,67 @@ const initializeDB = async () => {
   }
 };
 
-// LinkedIn configuration
-const jobSources = [
-  {
-    name: 'LinkedIn',
-    url: 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=software%2Bdeveloper%2Bfresher&location=India&position=1&pageNum=0',
-    parser: async (html) => {
+// LinkedIn parser function (moved up)
+const linkedInParser = async (html) => {
+  try {
+    const $ = cheerio.load(html);
+    const jobs = [];
+    
+    $('li').each((i, el) => {
       try {
-        const $ = cheerio.load(html);
-        const jobs = [];
+        const title = $(el).find('.base-search-card__title').text().trim();
+        const company = $(el).find('.base-search-card__subtitle').text().trim();
+        const location = $(el).find('.job-search-card__location').text().trim();
+        const rawUrl = $(el).find('.base-card__full-link').attr('href');
         
-        $('li').each((i, el) => {
-          try {
-            const title = $(el).find('.base-search-card__title').text().trim();
-            const company = $(el).find('.base-search-card__subtitle').text().trim();
-            const location = $(el).find('.job-search-card__location').text().trim();
-            const rawUrl = $(el).find('.base-card__full-link').attr('href');
-            
-            // Normalize URL
-            const urlObj = new URL(rawUrl);
-            urlObj.searchParams.delete('refId');
-            urlObj.searchParams.delete('trackingId');
-            const cleanUrl = urlObj.toString().split('?')[0];
+        // Normalize URL
+        const urlObj = new URL(rawUrl);
+        urlObj.searchParams.delete('refId');
+        urlObj.searchParams.delete('trackingId');
+        const cleanUrl = urlObj.toString().split('?')[0];
 
-            const datePosted = $(el).find('time').attr('datetime') || new Date().toISOString().split('T')[0];
+        const datePosted = $(el).find('time').attr('datetime') || new Date().toISOString().split('T')[0];
 
-            if (isFresherJob(title)) {
-              jobs.push({
-                title,
-                company: company.replace(/·\s*/, ''),
-                location,
-                url: cleanUrl,
-                date_posted: datePosted,
-                source: 'LinkedIn'
-              });
-            }
-          } catch (err) {
-            console.error('Error parsing job element:', err);
-          }
-        });
-
-        return jobs.slice(0, 15);
+        if (isFresherJob(title)) {
+          jobs.push({
+            title,
+            company: company.replace(/·\s*/, ''),
+            location,
+            url: cleanUrl,
+            date_posted: datePosted,
+            source: 'LinkedIn'
+          });
+        }
       } catch (err) {
-        console.error('LinkedIn parser error:', err);
-        return [];
+        console.error('Error parsing job element:', err);
       }
-    }
-  }
-];
+    });
 
+    return jobs.slice(0, 15);
+  } catch (err) {
+    console.error('LinkedIn parser error:', err);
+    return [];
+  }
+};
+
+// Fresher job check (moved up)
 function isFresherJob(title) {
   return /(fresher|entry-level|0-1 year|0-\s*1 year)/i.test(title);
 }
+
+// LinkedIn configuration (now after parser declaration)
+const jobSources = [
+  {
+    name: 'LinkedIn Developers',
+    url: 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=software%2Bdeveloper%2Bfresher&location=India&position=1&pageNum=0',
+    parser: linkedInParser
+  },
+  {
+    name: 'LinkedIn Testers',
+    url: 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=(qa%2Btester%2Bfresher)%20OR%20(quality%2Bassurance%2Bfresher)&location=India&position=1&pageNum=0',
+    parser: linkedInParser
+  }
+];
 
 // Enhanced scraping function with delays and rotation
 const scrapeJobs = async () => {
@@ -194,7 +203,7 @@ const startServer = async () => {
     }
   });
 
-  // Existing endpoints
+  // Jobs endpoints
   app.get('/api/jobs', async (req, res) => {
     try {
       const { rows } = await pool.query(`
@@ -202,7 +211,17 @@ const startServer = async () => {
         FROM jobs 
         WHERE
           location ILIKE '%india%' AND
-          title ILIKE ANY(ARRAY['%software developer%', '%software engineer%', '%tester%', '%qa%']) AND
+          title ILIKE ANY(ARRAY[
+            '%software developer%',
+            '%software engineer%',
+            '%tester%',
+            '%qa%',
+            '%quality assurance%',
+            '%manual testing%',
+            '%automation testing%',
+            '%test engineer%',
+            '%sdet%'
+          ]) AND
           title ILIKE ANY(ARRAY['%fresher%', '%entry level%', '%0-1 years%'])
         ORDER BY created_at DESC
         LIMIT 100
