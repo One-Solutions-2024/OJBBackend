@@ -13,7 +13,7 @@ const port = process.env.PORT || 5000;
 
 // Configure PostgreSQL connection
 const pool = new Pool({
-  connectionString: "postgresql://xrjobs_g5le_user:B9TewldMaMKNEYBmaDZf2CNxZy0Ged7y@dpg-cv78rvl2ng1s7382tus0-a.oregon-postgres.render.com/xrjobs_g5le",
+  connectionString: "postgresql://xrjobs_xyew_user:pRYXNGH7H996M3xAKptEqGt0s33TDyCj@dpg-cv7e8ctumphs738hbml0-a.oregon-postgres.render.com/xrjobs_xyew",
   ssl: { rejectUnauthorized: false }
 });
 
