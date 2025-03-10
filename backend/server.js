@@ -186,7 +186,6 @@ const jobSources = [
 // Database initialization
 const initializeDB = async () => {
   try {
-    await pool.query(`DROP TABLE IF EXISTS jobs`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY,
