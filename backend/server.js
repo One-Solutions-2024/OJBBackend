@@ -804,19 +804,25 @@ async function techMahindraParser(html) {
   return jobs;
 }
 async function scrapeWithPuppeteer(url, steps) {
+  // Add executable path configuration
   const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    headless: 'new', // Use new headless mode
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--single-process'
+    ],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || 
+      '/opt/render/.cache/puppeteer/chrome/linux-134.0.6998.35/chrome-linux64/chrome'
   });
-  const page = await browser.newPage();
   
+  const page = await browser.newPage();
   try {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    if (steps) {
-      await steps(page);
-    }
+    if (steps) await steps(page);
 
     return await page.content();
   } finally {
