@@ -186,6 +186,7 @@ const jobSources = [
 // Database initialization
 const initializeDB = async () => {
   try {
+    await pool.query(`DROP TABLE IF EXISTS jobs`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY,
@@ -198,6 +199,8 @@ const initializeDB = async () => {
         source VARCHAR(50),
         experience VARCHAR(100),
         employment_type VARCHAR(50),
+        salary VARCHAR(100),
+        requirements TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -220,7 +223,20 @@ async function linkedInParser(html) {
         const companyElem = $(el).find('.base-search-card__subtitle');
         const locationElem = $(el).find('.job-search-card__location');
         const linkElem = $(el).find('.base-card__full-link');
+        const description = $(el).find('.job-search-card__description').text().trim();
+ // Extract salary pattern (e.g., ₹5,00,000 - ₹7,00,000 a year)
+ const salaryMatch = description.match(/(₹[\d,]+ - ₹[\d,]+)\s*(?:per\syear|a\syear)/i);
+ const salary = salaryMatch ? salaryMatch[1] : null;
 
+ // Extract experience
+ const experienceMatch = description.match(/(\d+-\d+\s+years?\s+experience)/i);
+ const experience = experienceMatch ? experienceMatch[1] : 'Fresher';
+
+ // Extract requirements
+ const requirements = [];
+ $(el).find('.job-search-card__description ul li').each((i, li) => {
+   requirements.push($(li).text().trim());
+ });
         if (!titleElem.length || !companyElem.length) return;
 
         const title = titleElem.text().trim();
@@ -260,7 +276,11 @@ async function linkedInParser(html) {
             location,
             url: cleanUrl,
             date_posted: datePosted,
-            source: 'LinkedIn'
+            source: 'LinkedIn',
+            experience,
+            employment_type: 'Full-time', // Extract from description if available
+            salary,
+            requirements: requirements.join('\n')
           });
         }
       } catch (err) {
@@ -723,9 +743,16 @@ const scrapeJobs = async () => {
             
             if (existing.rows.length === 0) {
               await pool.query(
-                `INSERT INTO jobs (title, company, company_image, location, url, date_posted, source)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [job.title, job.company, job.company_image, job.location, job.url, job.date_posted, job.source]
+                `INSERT INTO jobs (
+                  title, company, company_image, location, url, 
+                  date_posted, source, experience, employment_type,
+                  salary, requirements
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [
+                  job.title, job.company, job.company_image, job.location, 
+                  job.url, job.date_posted, job.source, job.experience,
+                  job.employment_type, job.salary, job.requirements
+                ]
               );
               totalJobs++;
               console.log(`Added: ${job.title} - ${job.company}`);
