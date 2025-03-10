@@ -5,8 +5,9 @@ const cron = require('node-cron');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { URL } = require('url');
-const puppeteer = require('puppeteer'); // Added for JS rendering
-
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -40,36 +41,50 @@ const jobSources = [
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15'
     }
   },
+  {
+    name: 'Naukri',
+    type: 'puppeteer',
+    url: 'https://www.naukri.com/fresher-software-developer-jobs-in-india',
+    parser: naukriParser
+  },
+  {
+    name: 'Indeed',
+    type: 'puppeteer',
+    url: 'https://in.indeed.com/jobs?q=fresher+software+developer&l=India',
+    parser: indeedParser
+  },
+
 
   // Indian IT Companies
   {
     name: 'TCS Careers',
-    type: 'website',
+    type: 'puppeteer',
     url: 'https://www.tcs.com/careers',
     parser: tcsParser,
-    params: { country: 'India', department: 'Technology' },
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+    steps: async (page) => {
+      await page.waitForSelector('#country', { timeout: 15000 });
+      await page.select('#country', 'India');
+      await page.click('.search-button');
+      await page.waitForSelector('.search-results-list', { timeout: 20000 });
     }
   },
   {
     name: 'Infosys Careers',
-    type: 'website',
+    type: 'puppeteer',
     url: 'https://www.infosys.com/careers.html',
     parser: infosysParser,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Referer': 'https://www.infosys.com/'
+    steps: async (page) => {
+      await page.click('#professionals');
+      await page.waitForSelector('.job-listings', { timeout: 15000 });
     }
   },
   {
     name: 'Wipro Careers',
-    type: 'website',
+    type: 'puppeteer',
     url: 'https://careers.wipro.com/india-jobs',
     parser: wiproParser,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    steps: async (page) => {
+      await page.waitForSelector('.job-feed', { timeout: 20000 });
     }
   },
   {
@@ -100,7 +115,7 @@ const jobSources = [
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    },
+  },
   {
     name: 'IBM Careers',
     type: 'website',
@@ -110,7 +125,7 @@ const jobSources = [
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    },
+  },
   {
     name: 'Capgemini Careers',
     type: 'website',
@@ -130,7 +145,7 @@ const jobSources = [
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    },
+  },
   {
     name: 'Mindtree Careers',
     type: 'website',
@@ -180,7 +195,7 @@ const jobSources = [
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    }
+  }
 ];
 
 // Database initialization
@@ -215,7 +230,7 @@ async function linkedInParser(html) {
   const jobs = [];
   try {
     const $ = cheerio.load(html);
-    
+
     $('li').each((i, el) => {
       try {
         const titleElem = $(el).find('.base-search-card__title');
@@ -223,26 +238,26 @@ async function linkedInParser(html) {
         const locationElem = $(el).find('.job-search-card__location');
         const linkElem = $(el).find('.base-card__full-link');
         const description = $(el).find('.job-search-card__description').text().trim();
- // Extract salary pattern (e.g., ₹5,00,000 - ₹7,00,000 a year)
- const salaryMatch = description.match(/(₹[\d,]+ - ₹[\d,]+)\s*(?:per\syear|a\syear)/i);
- const salary = salaryMatch ? salaryMatch[1] : null;
+        // Extract salary pattern (e.g., ₹5,00,000 - ₹7,00,000 a year)
+        const salaryMatch = description.match(/(₹[\d,]+ - ₹[\d,]+)\s*(?:per\syear|a\syear)/i);
+        const salary = salaryMatch ? salaryMatch[1] : null;
 
- // Extract experience
- const experienceMatch = description.match(/(\d+-\d+\s+years?\s+experience)/i);
- const experience = experienceMatch ? experienceMatch[1] : 'Fresher';
+        // Extract experience
+        const experienceMatch = description.match(/(\d+-\d+\s+years?\s+experience)/i);
+        const experience = experienceMatch ? experienceMatch[1] : 'Fresher';
 
- // Extract requirements
- const requirements = [];
- $(el).find('.job-search-card__description ul li').each((i, li) => {
-   requirements.push($(li).text().trim());
- });
+        // Extract requirements
+        const requirements = [];
+        $(el).find('.job-search-card__description ul li').each((i, li) => {
+          requirements.push($(li).text().trim());
+        });
         if (!titleElem.length || !companyElem.length) return;
 
         const title = titleElem.text().trim();
         const company = companyElem.text().trim().replace(/·\s*/, '');
         const location = locationElem.text().trim();
         const rawUrl = linkElem.attr('href') || '';
-        
+
         // URL normalization
         const urlObj = new URL(rawUrl);
         urlObj.searchParams.delete('refId');
@@ -251,9 +266,9 @@ async function linkedInParser(html) {
 
         // Image handling
         const logoElem = $(el).find('.base-search-card__logo img');
-        let companyImage = logoElem.attr('data-delayed-url') || 
-                         logoElem.attr('data-ghost-url') || 
-                         logoElem.attr('src');
+        let companyImage = logoElem.attr('data-delayed-url') ||
+          logoElem.attr('data-ghost-url') ||
+          logoElem.attr('src');
         if (companyImage) {
           companyImage = companyImage.replace(/^http:/, 'https:')
             .replace(/([^:]\/)\/+/g, '$1')
@@ -291,37 +306,85 @@ async function linkedInParser(html) {
   }
   return jobs;
 }
+async function indeedParser(html) {
+  const $ = cheerio.load(html);
+  const jobs = [];
 
+  // This selector may vary based on Indeed's page structure.
+  $('.result').each((i, el) => {
+    const title = $(el).find('h2.title').text().trim();
+    const company = $(el).find('.company').text().trim();
+    const location = $(el).find('.location').text().trim();
+    let url = $(el).find('h2.title a').attr('href');
+
+    // Normalize URL if needed
+    if (url && !url.startsWith('http')) {
+      url = `https://in.indeed.com${url}`;
+    }
+
+    // Check if job qualifies as fresher
+    if (title && isFresherJob(title)) {
+      jobs.push({
+        title,
+        company,
+        location,
+        url,
+        source: 'Indeed',
+        experience: 'Fresher',
+        date_posted: $(el).find('.date').text().trim()
+      });
+    }
+  });
+
+  return jobs;
+}
+
+async function naukriParser(html) {
+  const $ = cheerio.load(html);
+  const jobs = [];
+  
+  $('[data-job-id]').each((i, el) => { // Updated selector
+    const title = $(el).find('a.title').text().trim();
+    const company = $(el).find('.comp-name').text().trim();
+    const location = $(el).find('.loc').text().trim();
+    const url = $(el).find('a.title').attr('href');
+    
+    if (isFresherJob(title)) {
+      jobs.push({
+        title,
+        company,
+        location,
+        url: url.includes('http') ? url : `https://www.naukri.com${url}`,
+        source: 'Naukri',
+        date_posted: new Date().toISOString().split('T')[0]
+      });
+    }
+  });
+  return jobs;
+}
 // TCS Parser
 async function tcsParser(html) {
+  const $ = cheerio.load(html);
   const jobs = [];
-  try {
-    const $ = cheerio.load(html);
-    $('.search-results-list li').each((i, el) => {
-      const titleElem = $(el).find('.job-title a');
-      const locationElem = $(el).find('.job-location');
-      const dateElem = $(el).find('.job-post-date');
+  
+  $('.search-results-item').each((i, el) => {
+    const title = $(el).find('.job-title').text().trim();
+    const location = $(el).find('.job-location').text().trim();
+    const url = $(el).find('a').attr('href');
+    const datePosted = $(el).find('.posting-date').text().trim();
 
-      const title = titleElem.text().trim();
-      const url = `https://www.tcs.com${titleElem.attr('href')}`;
-      const location = locationElem.text().trim();
-      const datePosted = dateElem.text().trim();
-
-      if (title && isFresherJob(title)) {
-        jobs.push({
-          title,
-          company: 'TCS',
-          company_image: 'https://www.tcs.com/etc/designs/tcsRetina/img/tcs-logo.svg',
-          location,
-          url,
-          date_posted: datePosted,
-          source: 'TCS Careers'
-        });
-      }
-    });
-  } catch (err) {
-    console.error('TCS parser error:', err);
-  }
+    if (isFresherJob(title)) {
+      jobs.push({
+        title,
+        company: 'TCS',
+        location,
+        url: `https://www.tcs.com${url}`,
+        source: 'TCS Careers',
+        date_posted: datePosted,
+        experience: 'Fresher'
+      });
+    }
+  });
   return jobs;
 }
 
@@ -342,6 +405,10 @@ async function infosysParser(html) {
           company_image: 'https://www.infosys.com/content/dam/infosys-web/en/global-resources/media-resources/infosys-logo.jpg',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Infosys Careers'
         });
@@ -370,6 +437,10 @@ async function accentureParser(html) {
           company_image: 'https://www.accenture.com/t00010101T000000Z__w__/in-en/_acnmedia/Accenture/Dev/Redesign/Acc_Logo_Black_Purple_RGB.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Accenture Careers'
         });
@@ -398,6 +469,10 @@ async function wiproParser(html) {
           company_image: 'https://www.wipro.com/content/dam/nexus/en/brand/logo/wipro-logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Wipro Careers'
         });
@@ -426,6 +501,10 @@ async function hclParser(html) {
           company_image: 'https://www.hcltech.com/themes/custom/hcltech/logo.svg',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'HCL Careers'
         });
@@ -454,6 +533,10 @@ async function ibmParser(html) {
           company_image: 'https://www.ibm.com/design/language/8d222b0e5c5a21f6a0d69691e6d6a21b/ibm-masthead-logo.svg',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'IBM Careers'
         });
@@ -482,6 +565,10 @@ async function amazonParser(html) {
           company_image: 'https://logos-world.net/wp-content/uploads/2020/04/Amazon-Logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Amazon Careers'
         });
@@ -510,6 +597,10 @@ async function mphasisParser(html) {
           company_image: 'https://www.mphasis.com/content/dam/mphasis-com/images/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Mphasis Careers'
         });
@@ -538,6 +629,10 @@ async function deloitteParser(html) {
           company_image: 'https://jobsindia.deloitte.com/content/dam/deloitte/in/images/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Deloitte Careers'
         });
@@ -566,6 +661,10 @@ async function mindtreeParser(html) {
           company_image: 'https://www.mindtree.com/sites/all/themes/mindtree/images/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Mindtree Careers'
         });
@@ -594,6 +693,10 @@ async function ltiParser(html) {
           company_image: 'https://www.lntinfotech.com/content/dam/lntinfotech/brand/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'LTI Careers'
         });
@@ -622,6 +725,10 @@ async function cognizantParser(html) {
           company_image: 'https://careers.cognizant.com/content/dam/cognizant/careers/images/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Cognizant Careers'
         });
@@ -650,6 +757,10 @@ async function capgeminiParser(html) {
           company_image: 'https://www.capgemini.com/wp-content/themes/capgemini-komposite/assets/images/logo.svg',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Capgemini Careers'
         });
@@ -678,6 +789,10 @@ async function techMahindraParser(html) {
           company_image: 'https://www.techmahindra.com/content/dam/tm/logo.png',
           location,
           url,
+          experience: 'Fresher',
+          employment_type: 'Full-time',
+          salary: 'Not disclosed',
+          requirements: 'Bachelor\'s degree in relevant field',
           date_posted: datePosted,
           source: 'Tech Mahindra Careers'
         });
@@ -688,117 +803,108 @@ async function techMahindraParser(html) {
   }
   return jobs;
 }
+async function scrapeWithPuppeteer(url, steps) {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const page = await browser.newPage();
+  
+  try {
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    if (steps) {
+      await steps(page);
+    }
+
+    return await page.content();
+  } finally {
+    await browser.close();
+  }
+}
+
+
 const scrapeJobs = async () => {
   let totalJobs = 0;
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15'
-  ];
-
-  try {
-    for (const source of jobSources) {
+  
+  for (const source of jobSources) {
+    try {
       console.log(`[Scraper] Scraping ${source.name}...`);
-      let jobs = [];
-
-      try {
-        if (source.type === 'api') {
-          // Handle API-based sources
-          for (let page = 0; page < (source.pages || 1); page++) {
-            const response = await axios.get(
-              typeof source.url === 'function' ? source.url(page) : source.url,
-              {
-                headers: {
-                  ...source.headers,
-                  'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)]
-                },
-                timeout: 15000
-              }
-            );
-            jobs = jobs.concat(await source.parser(response.data));
-            await new Promise(resolve => setTimeout(resolve, 2000));
+      let html;
+      
+      if (source.type === 'puppeteer') {
+        html = await scrapeWithPuppeteer(source.url, source.steps);
+      } else if (source.type === 'api') {
+        const response = await axios.get(
+          typeof source.url === 'function' ? source.url(0) : source.url,
+          {
+            headers: source.headers,
+            timeout: 25000 // Increased timeout
           }
-        } else {
-          // Handle website-based sources
-          const response = await axios.get(source.url, {
-            params: source.params,
-            headers: {
-              ...source.headers,
-              'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)]
-            },
-            timeout: 15000
-          });
-          jobs = await source.parser(response.data);
-        }
-
-        console.log(`Parsed ${jobs.length} jobs from ${source.name}`);
-
-        // Database insertion
-        for (const job of jobs) {
-          try {
-            const existing = await pool.query(
-              'SELECT 1 FROM jobs WHERE url = $1', 
-              [job.url]
-            );
-            
-            if (existing.rows.length === 0) {
-              await pool.query(
-                `INSERT INTO jobs (
-                  title, company, company_image, location, url, 
-                  date_posted, source, experience, employment_type,
-                  salary, requirements
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [
-                  job.title, job.company, job.company_image, job.location, 
-                  job.url, job.date_posted, job.source, job.experience,
-                  job.employment_type, job.salary, job.requirements
-                ]
-              );
-              totalJobs++;
-              console.log(`Added: ${job.title} - ${job.company}`);
-            }
-          } catch (err) {
-            console.error(`Database error for ${job.url}:`, err.message);
-          }
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (error) {
-        console.error(`[Scraper] Error in ${source.name}:`, error.message);
+        );
+        html = response.data;
       }
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    }
-  } catch (error) {
-    console.error('[Scraper] Global error:', error.message);
-  }
 
-  console.log(`[Scraper] Total new jobs added: ${totalJobs}`);
+      const jobs = await source.parser(html);
+      console.log(`Found ${jobs.length} jobs from ${source.name}`);
+
+      // Database insertion
+      for (const job of jobs) {
+        try {
+          const existing = await pool.query(
+            'SELECT 1 FROM jobs WHERE url = $1', [job.url]
+          );
+          
+          if (!existing.rows.length) {
+            await pool.query(
+              `INSERT INTO jobs (
+                title, company, location, url, source, 
+                experience, date_posted
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [job.title, job.company, job.location, job.url, 
+               job.source, job.experience, job.date_posted]
+            );
+            totalJobs++;
+          }
+        } catch (err) {
+          console.error(`DB Error for ${job.url}:`, err.message);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      console.error(`[Scraper] Error in ${source.name}:`, error.message);
+      if (error.response) {
+        console.error(`Status: ${error.response.status}`, `URL: ${error.config.url}`);
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 10000)); // Longer delay
+  }
+  
   return totalJobs;
 };
 
 // Enhanced job filter
 function isFresherJob(title) {
   const patterns = [
-    /\b(fresher|freshers)\b/i,
-    /\bentry[-\s]?level\b/i,
-    /\bjunior\b/i,
-    /\bgraduate\b/i,
-    /\btrainee\b/i,
-    /\bintern\b/i,
-    /0-?1\s+years?/i,
-    /(software|qa|test)\s+(engineer|developer|tester|analyst)/i
+    /\b(fresher|freshers|entry[- ]level|junior)\b/i,
+    /0-?[12]\s+years?/i,
+    /(software|developer|engineer|tester)\s+(fresher|trainee)/i
   ];
-  return patterns.some(pattern => pattern.test(title));
+  return patterns.some(p => p.test(title)) && 
+    !/\b(senior|experienced|3\+)\b/i.test(title);
 }
+
 app.use(cors());
 app.use(express.json());
 
 app.get('/api/jobs', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT id, title, company, company_image, location, url, date_posted, source
+      SELECT *
       FROM jobs
       WHERE title ~* $1
       ORDER BY created_at DESC
-      LIMIT 300
     `, ['\\y(software|developer|engineer|tester|qa|sdet|quality assurance|entry level|fresher|junior)\\y']);
     res.json(rows);
   } catch (err) {
@@ -823,17 +929,17 @@ const startServer = async () => {
 
   app.listen(port, () => {
     console.log(`[Server] Running on port ${port}`);
-    
+
     // Initial scrape
     // Initial scrape
-(async () => {
-  try {
-    const count = await scrapeJobs();
-    console.log(`Initial scrape completed: ${count} jobs added`);
-  } catch (err) {
-    console.error('Initialization error:', err);
-  }
-})();
+    (async () => {
+      try {
+        const count = await scrapeJobs();
+        console.log(`Initial scrape completed: ${count} jobs added`);
+      } catch (err) {
+        console.error('Initialization error:', err);
+      }
+    })();
     // Scheduled scraping
     cron.schedule('0 * * * *', () => {
       console.log('[Cron] Starting scheduled scrape');
