@@ -25,7 +25,7 @@ const jobSources = [
     type: 'api',
     url: (page) => `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=software%20developer%20(fresher%20OR%20entry%20level)&location=India&start=${page * 25}`,
     parser: linkedInParser,
-    pages: 3,
+    pages: 20,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Accept-Language': 'en-US,en;q=0.9'
@@ -36,7 +36,7 @@ const jobSources = [
     type: 'api',
     url: (page) => `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=(qa%20tester%20(fresher%20OR%20entry%20level))%20OR%20(quality%20assurance%20(fresher%20OR%20entry%20level))&location=India&start=${page * 25}`,
     parser: linkedInParser,
-    pages: 3,
+    pages: 20,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15'
     }
@@ -804,25 +804,19 @@ async function techMahindraParser(html) {
   return jobs;
 }
 async function scrapeWithPuppeteer(url, steps) {
-  // Add executable path configuration
   const browser = await puppeteer.launch({
-    headless: 'new', // Use new headless mode
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--single-process'
-    ],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || 
-      '/opt/render/.cache/puppeteer/chrome/linux-134.0.6998.35/chrome-linux64/chrome'
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
-  
   const page = await browser.newPage();
+  
   try {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    if (steps) await steps(page);
+    if (steps) {
+      await steps(page);
+    }
 
     return await page.content();
   } finally {
