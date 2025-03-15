@@ -461,21 +461,34 @@ app.get("/api/jobs", async (req, res) => {
 });
 
 // Detail route for individual job using both id and slug
+// Detail route for individual job using both id and slug
 app.get("/api/jobs/:id/:slug", async (req, res) => {
   try {
     const { id, slug } = req.params;
-    const { rows } = await pool.query("SELECT * FROM job WHERE id = $1", [id]);
-    if (rows.length) {
-      // If desired, you could check if rows[0].url !== slug and handle accordingly.
-      res.json(rows[0]);
-    } else {
-      res.status(404).json({ error: "Job not found" });
+    // First try: fetch job matching both id and slug
+    let { rows } = await pool.query(
+      "SELECT * FROM job WHERE id = $1 AND url = $2",
+      [id, slug]
+    );
+
+    // If no job was found with matching slug, fallback to lookup by id only
+    if (rows.length === 0) {
+      const result = await pool.query("SELECT * FROM job WHERE id = $1", [id]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      // Return the job even if the slug doesn’t match;
+      // the frontend can then redirect to the correct URL.
+      return res.json(result.rows[0]);
     }
+
+    res.json(rows[0]);
   } catch (err) {
     console.error("[API] Error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
+
 
 // Disable caching for all responses
 app.use((req, res, next) => {
