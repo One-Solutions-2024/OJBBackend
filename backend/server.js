@@ -84,7 +84,7 @@ async function naukriParser(html) {
         const companySlug = slugifyCompany(company);
         const locationSlug = slugify(location);
         const salarySlug = slugify(salary);
-        const constructedUrl = `${companySlug}-${locationSlug}-${salarySlug}`;
+        const constructedUrl = `${companySlug}-${salarySlug}-${locationSlug}`;
 
         jobs.push({
           companyname: companySlug,
@@ -167,7 +167,7 @@ async function linkedInParser(html) {
         const locationSlug = slugify(location);
         const salaryValue = salaryMatch ? salaryMatch[1] : "not disclosed";
         const salarySlug = slugify(salaryValue);
-        const constructedUrl = `${companySlug}-${locationSlug}-${salarySlug}`;
+        const constructedUrl = `${companySlug}-${salarySlug}-${locationSlug}`;
 
         jobs.push({
           companyname: companySlug,
