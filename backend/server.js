@@ -1,4 +1,3 @@
-// Import required modules
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
@@ -16,7 +15,7 @@ const pool = new Pool({
   connectionString:
     "postgresql://xrjobs_urp4_user:2lkJMgRTYllld0VMT3h7y3xYfL5SRmk1@dpg-cvajip7noe9s73fabcqg-a.oregon-postgres.render.com/xrjobs_urp4",
   ssl: {
-    rejectUnauthorized: false, // This bypasses certificate verification
+    rejectUnauthorized: false,
   },
 });
 
@@ -32,7 +31,6 @@ async function naukriParser(html) {
   const jobs = [];
   try {
     const $ = cheerio.load(html);
-    // Naukri job listings are often in elements like "article.jobTuple" or "div.jobTuple"
     $("article.jobTuple, div.jobTuple").each((i, el) => {
       try {
         const titleElem = $(el).find("a.title");
@@ -72,7 +70,6 @@ async function naukriParser(html) {
           datePosted = new Date().toISOString().split("T")[0];
         }
 
-        // Use default image if not provided
         const image_link = "/company-logos/default.png";
         const job_type = "Full-time";
         const experience = "Fresher";
@@ -123,8 +120,6 @@ async function naukriParser(html) {
 // Enhanced LinkedIn Parser
 async function linkedInParser(html) {
   const jobs = [];
-
-  // Helpers
   function slugifyCompany(text) {
     return text.toLowerCase().replace(/\s+/g, "");
   }
@@ -134,8 +129,6 @@ async function linkedInParser(html) {
 
   try {
     const $ = cheerio.load(html);
-
-    // Updated container selector to div.base-card
     $("div.base-card").each((i, el) => {
       try {
         const titleElem = $(el).find(".base-search-card__title");
@@ -157,17 +150,14 @@ async function linkedInParser(html) {
           .replace(/\/\//g, "/")
           .replace("https:/", "https://");
 
-        // Extract experience & salary from description or title
         const experienceMatch =
           description.match(/(\d+-\d+\s+years? experience|fresher|entry level)/i) ||
           title.match(/(fresher|entry level)/i);
         const salaryMatch = description.match(/(₹[\d,]+ - ₹[\d,]+)\s*(?:per\syear|a\syear)/i);
 
-        // Get company image
         const logoElem = $(el).find("img.artdeco-entity-image");
         let companyImage = logoElem.attr("data-delayed-url") || logoElem.attr("src");
 
-        // Validate and normalize date posted
         let timeAttr = $(el).find("time").attr("datetime");
         let datePosted;
         if (timeAttr) {
@@ -179,7 +169,6 @@ async function linkedInParser(html) {
           datePosted = new Date().toISOString().split("T")[0];
         }
 
-        // Construct URL slug
         const companySlug = slugifyCompany(company);
         const locationSlug = slugify(location);
         const salaryValue = salaryMatch ? salaryMatch[1] : "not disclosed";
@@ -190,10 +179,9 @@ async function linkedInParser(html) {
           companyname: companySlug,
           title,
           description: description || "Check company website for details",
-          // The apply_link here remains the original LinkedIn URL.
           apply_link: cleanUrl,
           image_link: companyImage || "/company-logos/default.png",
-          url: constructedUrl, // This field holds the slug
+          url: constructedUrl, // Constructed slug
           salary: salaryMatch ? salaryMatch[1] : "Not disclosed",
           location,
           job_type: description.includes("Part-time") ? "Part-time" : "Full-time",
@@ -209,7 +197,6 @@ async function linkedInParser(html) {
   } catch (err) {
     console.error("LinkedIn parser error:", err);
   }
-
   console.log(`Parsed ${jobs.length} jobs from current page`);
   return jobs;
 }
@@ -226,7 +213,7 @@ const jobSources = [
       return `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${keywords}&location=India&start=${page * 25}`;
     },
     parser: linkedInParser,
-    pages: 5, // Adjust this number to scrape more pages if needed
+    pages: 5,
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
       "Accept-Language": "en-US,en;q=0.9",
@@ -259,26 +246,21 @@ const jobSources = [
 // ====================
 const scrapeJobs = async () => {
   let totalJobs = 0;
-
   for (const source of jobSources) {
     try {
       console.log(`[Scraper] Scraping ${source.name}...`);
       let allJobs = [];
-
       if (source.type === "api") {
         for (let page = 0; page < source.pages; page++) {
           try {
             const url = typeof source.url === "function" ? source.url(page) : source.url;
             console.log(`Scraping page ${page}: ${url}`);
-
             const response = await axios.get(url, {
               headers: source.headers,
               timeout: 30000,
             });
-
             const jobs = await source.parser(response.data);
             allJobs = [...allJobs, ...jobs];
-
             // Randomized delay between pages (5-15 seconds)
             const delay = Math.floor(Math.random() * 10000) + 5000;
             await new Promise((resolve) => setTimeout(resolve, delay));
@@ -296,9 +278,7 @@ const scrapeJobs = async () => {
           console.error(`Error fetching Naukri page: ${err.message}`);
         }
       }
-
       console.log(`Found ${allJobs.length} valid jobs from ${source.name}`);
-
       // Insert jobs into the database if they don't already exist
       for (const job of allJobs) {
         try {
@@ -373,7 +353,6 @@ const initializeDbAndServer = async () => {
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
     // Import jobs from file if table is empty
     const jobsCountResult = await pool.query("SELECT COUNT(*) as count FROM job;");
     const jobsCount = jobsCountResult.rows[0].count;
@@ -403,12 +382,10 @@ const initializeDbAndServer = async () => {
       }
       console.log("Job data has been imported successfully.");
     }
-
     // Start server
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}/`);
     });
-
     // Initial scrape on startup
     (async () => {
       try {
@@ -418,7 +395,6 @@ const initializeDbAndServer = async () => {
         console.error("Initialization error:", err);
       }
     })();
-
     // Daily scrape at 2 AM
     cron.schedule("0 2 * * *", () => {
       console.log("[Cron] Starting daily scrape");
@@ -430,11 +406,6 @@ const initializeDbAndServer = async () => {
   }
 };
 
-// ====================
-// API Routes
-// ====================
-
-// Get all jobs (ordered with "isNew" flag)
 app.get("/api/jobs", async (req, res) => {
   try {
     const currentTime = new Date();
@@ -461,7 +432,6 @@ app.get("/api/jobs", async (req, res) => {
 });
 
 // Detail route for individual job using both id and slug
-// Detail route for individual job using both id and slug
 app.get("/api/jobs/:id/:slug", async (req, res) => {
   try {
     const { id, slug } = req.params;
@@ -470,25 +440,20 @@ app.get("/api/jobs/:id/:slug", async (req, res) => {
       "SELECT * FROM job WHERE id = $1 AND url = $2",
       [id, slug]
     );
-
-    // If no job was found with matching slug, fallback to lookup by id only
+    // Fallback to lookup by id only
     if (rows.length === 0) {
       const result = await pool.query("SELECT * FROM job WHERE id = $1", [id]);
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Job not found" });
       }
-      // Return the job even if the slug doesn’t match;
-      // the frontend can then redirect to the correct URL.
       return res.json(result.rows[0]);
     }
-
     res.json(rows[0]);
   } catch (err) {
     console.error("[API] Error:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
-
 
 // Disable caching for all responses
 app.use((req, res, next) => {
@@ -507,7 +472,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Something went wrong!" });
 });
 
-// Connect to the database and start the server
 pool.connect()
   .then(() => console.log("Connected to PostgreSQL database"))
   .catch((err) => console.error("Database connection error:", err.stack));
