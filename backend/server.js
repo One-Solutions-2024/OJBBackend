@@ -437,18 +437,24 @@ const initializeDbAndServer = async () => {
 // Get all jobs (ordered with "isNew" flag)
 app.get("/api/jobs", async (req, res) => {
   try {
+    // Get the current time and compute the date 7 days ago.
     const currentTime = new Date();
     const sevenDaysAgo = new Date(currentTime.setDate(currentTime.getDate() - 7));
+
     const getAllJobsQuery = `
       SELECT *,
         CASE 
-          WHEN createdAt >= $1 THEN 1 
+          WHEN job_posted >= $1 THEN 1 
           ELSE 0 
         END as isNew 
       FROM job 
-      ORDER BY isNew DESC, createdAt DESC;
+      ORDER BY job_posted DESC;
     `;
+
+    // Execute the query with the sevenDaysAgo date in ISO format.
     const jobs = await pool.query(getAllJobsQuery, [sevenDaysAgo.toISOString()]);
+
+    // Return the results if found, otherwise send a 404 error.
     if (jobs.rows.length > 0) {
       res.json(jobs.rows);
     } else {
@@ -459,6 +465,7 @@ app.get("/api/jobs", async (req, res) => {
     res.status(500).json({ error: "Failed to retrieve jobs" });
   }
 });
+
 
 // Detail route for individual job using both id and slug
 app.get("/api/jobs/:id/:slug", async (req, res) => {
