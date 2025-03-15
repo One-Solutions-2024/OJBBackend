@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize PostgreSQL pool using environment variable
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString:"postgresql://xrjobs_urp4_user:2lkJMgRTYllld0VMT3h7y3xYfL5SRmk1@dpg-cvajip7noe9s73fabcqg-a.oregon-postgres.render.com/xrjobs_urp4",
   ssl: {
     rejectUnauthorized: false, // This bypasses certificate verification
   },
