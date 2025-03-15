@@ -26,7 +26,6 @@ const app = express();
 // Parser Functions
 // ====================
 
-// Naukri Parser Implementation
 async function naukriParser(html) {
   const jobs = [];
   try {
@@ -39,7 +38,6 @@ async function naukriParser(html) {
         const salaryElem = $(el).find(".salary");
         const dateElem = $(el).find(".date");
 
-        // Validate required fields
         if (!titleElem.length || !companyElem.length) {
           console.log("Skipping Naukri element - missing title or company");
           return;
@@ -56,7 +54,6 @@ async function naukriParser(html) {
           $(el).find(".job-description").text().trim() ||
           "Check company website for details";
 
-        // Parse date posted; if relative (e.g., "2 days ago"), convert to a real date
         let datePostedRaw = dateElem.text().trim();
         let datePosted;
         const dayMatch = datePostedRaw.match(/(\d+)\s+day/);
@@ -66,7 +63,6 @@ async function naukriParser(html) {
           d.setDate(d.getDate() - days);
           datePosted = d.toISOString().split("T")[0];
         } else {
-          // Fallback to current date
           datePosted = new Date().toISOString().split("T")[0];
         }
 
@@ -75,7 +71,6 @@ async function naukriParser(html) {
         const experience = "Fresher";
         const batch = "N/A";
 
-        // Helpers to generate URL slug
         function slugifyCompany(text) {
           return text.toLowerCase().replace(/\s+/g, "");
         }
@@ -117,7 +112,6 @@ async function naukriParser(html) {
   return jobs;
 }
 
-// Enhanced LinkedIn Parser
 async function linkedInParser(html) {
   const jobs = [];
   function slugifyCompany(text) {
@@ -261,7 +255,6 @@ const scrapeJobs = async () => {
             });
             const jobs = await source.parser(response.data);
             allJobs = [...allJobs, ...jobs];
-            // Randomized delay between pages (5-15 seconds)
             const delay = Math.floor(Math.random() * 10000) + 5000;
             await new Promise((resolve) => setTimeout(resolve, delay));
           } catch (err) {
@@ -279,7 +272,6 @@ const scrapeJobs = async () => {
         }
       }
       console.log(`Found ${allJobs.length} valid jobs from ${source.name}`);
-      // Insert jobs into the database if they don't already exist
       for (const job of allJobs) {
         try {
           const existing = await pool.query("SELECT 1 FROM job WHERE url = $1", [job.url]);
@@ -353,7 +345,6 @@ const initializeDbAndServer = async () => {
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    // Import jobs from file if table is empty
     const jobsCountResult = await pool.query("SELECT COUNT(*) as count FROM job;");
     const jobsCount = jobsCountResult.rows[0].count;
     if (jobsCount == 0) {
@@ -382,11 +373,9 @@ const initializeDbAndServer = async () => {
       }
       console.log("Job data has been imported successfully.");
     }
-    // Start server
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}/`);
     });
-    // Initial scrape on startup
     (async () => {
       try {
         const count = await scrapeJobs();
@@ -395,7 +384,6 @@ const initializeDbAndServer = async () => {
         console.error("Initialization error:", err);
       }
     })();
-    // Daily scrape at 2 AM
     cron.schedule("0 2 * * *", () => {
       console.log("[Cron] Starting daily scrape");
       scrapeJobs();
@@ -435,12 +423,10 @@ app.get("/api/jobs", async (req, res) => {
 app.get("/api/jobs/:id/:slug", async (req, res) => {
   try {
     const { id, slug } = req.params;
-    // First try: fetch job matching both id and slug
     let { rows } = await pool.query(
       "SELECT * FROM job WHERE id = $1 AND url = $2",
       [id, slug]
     );
-    // Fallback to lookup by id only
     if (rows.length === 0) {
       const result = await pool.query("SELECT * FROM job WHERE id = $1", [id]);
       if (result.rows.length === 0) {
