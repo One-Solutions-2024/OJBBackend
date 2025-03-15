@@ -13,7 +13,8 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize PostgreSQL pool using environment variable
 const pool = new Pool({
-  connectionString:"postgresql://xrjobs_urp4_user:2lkJMgRTYllld0VMT3h7y3xYfL5SRmk1@dpg-cvajip7noe9s73fabcqg-a.oregon-postgres.render.com/xrjobs_urp4",
+  connectionString:
+    "postgresql://xrjobs_urp4_user:2lkJMgRTYllld0VMT3h7y3xYfL5SRmk1@dpg-cvajip7noe9s73fabcqg-a.oregon-postgres.render.com/xrjobs_urp4",
   ssl: {
     rejectUnauthorized: false, // This bypasses certificate verification
   },
@@ -22,7 +23,9 @@ const pool = new Pool({
 // Initialize Express app
 const app = express();
 
-// Parser functions
+// ====================
+// Parser Functions
+// ====================
 
 // Naukri Parser Implementation
 async function naukriParser(html) {
@@ -80,7 +83,11 @@ async function naukriParser(html) {
           return text.toLowerCase().replace(/\s+/g, "");
         }
         function slugify(text) {
-          return text.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^\w-]+/g, "");
+          return text
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, "-")
+            .replace(/[^\w-]+/g, "");
         }
         const companySlug = slugifyCompany(company);
         const locationSlug = slugify(location);
@@ -93,7 +100,7 @@ async function naukriParser(html) {
           description,
           apply_link,
           image_link,
-          url: constructedUrl,
+          url: constructedUrl, // This field holds the slug
           salary,
           location,
           job_type,
@@ -127,7 +134,7 @@ async function linkedInParser(html) {
 
   try {
     const $ = cheerio.load(html);
-    
+
     // Updated container selector to div.base-card
     $("div.base-card").each((i, el) => {
       try {
@@ -146,14 +153,14 @@ async function linkedInParser(html) {
         const company = companyElem.text().trim().replace(/\s+/g, " ");
         const location = locationElem.text().trim();
         const rawUrl = linkElem.attr("href") || "";
-
         const cleanUrl = rawUrl.split("?")[0]
           .replace(/\/\//g, "/")
           .replace("https:/", "https://");
 
         // Extract experience & salary from description or title
-        const experienceMatch = description.match(/(\d+-\d+\s+years? experience|fresher|entry level)/i)
-          || title.match(/(fresher|entry level)/i);
+        const experienceMatch =
+          description.match(/(\d+-\d+\s+years? experience|fresher|entry level)/i) ||
+          title.match(/(fresher|entry level)/i);
         const salaryMatch = description.match(/(₹[\d,]+ - ₹[\d,]+)\s*(?:per\syear|a\syear)/i);
 
         // Get company image
@@ -165,7 +172,9 @@ async function linkedInParser(html) {
         let datePosted;
         if (timeAttr) {
           const parsedDate = new Date(timeAttr);
-          datePosted = isNaN(parsedDate) ? new Date().toISOString().split("T")[0] : parsedDate.toISOString().split("T")[0];
+          datePosted = isNaN(parsedDate)
+            ? new Date().toISOString().split("T")[0]
+            : parsedDate.toISOString().split("T")[0];
         } else {
           datePosted = new Date().toISOString().split("T")[0];
         }
@@ -181,9 +190,10 @@ async function linkedInParser(html) {
           companyname: companySlug,
           title,
           description: description || "Check company website for details",
+          // The apply_link here remains the original LinkedIn URL.
           apply_link: cleanUrl,
           image_link: companyImage || "/company-logos/default.png",
-          url: constructedUrl,
+          url: constructedUrl, // This field holds the slug
           salary: salaryMatch ? salaryMatch[1] : "Not disclosed",
           location,
           job_type: description.includes("Part-time") ? "Part-time" : "Full-time",
@@ -199,17 +209,14 @@ async function linkedInParser(html) {
   } catch (err) {
     console.error("LinkedIn parser error:", err);
   }
-  
+
   console.log(`Parsed ${jobs.length} jobs from current page`);
-  // Uncomment the filter below if you want to restrict to fresher/entry-level jobs only
-  // return jobs.filter(job => 
-  //   /(fresher|entry level|0-2 years)/i.test(job.title) &&
-  //   !/(senior|manager|lead|sr\.)/i.test(job.title)
-  // );
   return jobs;
 }
 
-// Job source configurations
+// ====================
+// Job Source Configurations
+// ====================
 const jobSources = [
   {
     name: "LinkedIn Developers",
@@ -247,10 +254,12 @@ const jobSources = [
   },
 ];
 
-// Enhanced scrapeJobs function with delays
+// ====================
+// Scraping Function
+// ====================
 const scrapeJobs = async () => {
   let totalJobs = 0;
-  
+
   for (const source of jobSources) {
     try {
       console.log(`[Scraper] Scraping ${source.name}...`);
@@ -261,15 +270,15 @@ const scrapeJobs = async () => {
           try {
             const url = typeof source.url === "function" ? source.url(page) : source.url;
             console.log(`Scraping page ${page}: ${url}`);
-            
-            const response = await axios.get(url, { 
+
+            const response = await axios.get(url, {
               headers: source.headers,
               timeout: 30000,
             });
-            
+
             const jobs = await source.parser(response.data);
             allJobs = [...allJobs, ...jobs];
-            
+
             // Randomized delay between pages (5-15 seconds)
             const delay = Math.floor(Math.random() * 10000) + 5000;
             await new Promise((resolve) => setTimeout(resolve, delay));
@@ -278,8 +287,6 @@ const scrapeJobs = async () => {
           }
         }
       } else if (source.type === "puppeteer") {
-        // For sources like Naukri, you might use Puppeteer.
-        // For simplicity here, we use axios to fetch the HTML.
         try {
           console.log(`Fetching Naukri page: ${source.url}`);
           const response = await axios.get(source.url, { timeout: 30000 });
@@ -292,15 +299,10 @@ const scrapeJobs = async () => {
 
       console.log(`Found ${allJobs.length} valid jobs from ${source.name}`);
 
-      // Database insertion with corrected column order:
-      // Order: companyname, title, description, apply_link, image_link, url, date_posted, salary, location, job_type, experience, batch, job_uploader
+      // Insert jobs into the database if they don't already exist
       for (const job of allJobs) {
         try {
-          const existing = await pool.query(
-            "SELECT 1 FROM job WHERE url = $1",
-            [job.url]
-          );
-          
+          const existing = await pool.query("SELECT 1 FROM job WHERE url = $1", [job.url]);
           if (!existing.rows.length) {
             await pool.query(
               `INSERT INTO job (
@@ -328,10 +330,8 @@ const scrapeJobs = async () => {
         } catch (err) {
           console.error(`DB Error for ${job.url}:`, err.message);
         }
-        // Short delay between inserts
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
-      // Longer delay between sources
       await new Promise((resolve) => setTimeout(resolve, 15000));
     } catch (error) {
       console.error(`[Scraper] Error in ${source.name}:`, error.message);
@@ -340,17 +340,18 @@ const scrapeJobs = async () => {
   return totalJobs;
 };
 
-// Middleware
+// ====================
+// Middleware Setup
+// ====================
 app.use(express.json());
 app.use(cors());
 app.use(helmet());
 app.use(morgan("combined"));
-const corsOptions = {
-  origin: "*", // Replace "*" with specific domains for production
-};
-app.use(cors(corsOptions));
+app.use(cors({ origin: "*" }));
 
-// Initialize DB and start server
+// ====================
+// Database Initialization & Server Start
+// ====================
 const initializeDbAndServer = async () => {
   try {
     await pool.query(`
@@ -373,19 +374,16 @@ const initializeDbAndServer = async () => {
       );
     `);
 
-    // Insert jobs from file if table is empty
+    // Import jobs from file if table is empty
     const jobsCountResult = await pool.query("SELECT COUNT(*) as count FROM job;");
     const jobsCount = jobsCountResult.rows[0].count;
-
     if (jobsCount == 0) {
       const data = await fs.readFile("jobs.json", "utf8");
       const jobList = JSON.parse(data);
-
       const insertJobQuery = `
          INSERT INTO job (companyname, title, description, apply_link, image_link, url, date_posted, salary, location, job_type, experience, batch, job_uploader)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
        `;
-
       for (const job of jobList) {
         await pool.query(insertJobQuery, [
           job.companyname,
@@ -407,17 +405,11 @@ const initializeDbAndServer = async () => {
     }
 
     // Start server
-    const server = app.listen(PORT, () => {
+    app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}/`);
     });
 
-    // Upgrade HTTP server to WebSocket if needed
-    server.on("upgrade", (request, socket, head) => {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
-      });
-    });
-
+    // Initial scrape on startup
     (async () => {
       try {
         const count = await scrapeJobs();
@@ -432,21 +424,21 @@ const initializeDbAndServer = async () => {
       console.log("[Cron] Starting daily scrape");
       scrapeJobs();
     });
-
   } catch (error) {
     console.error(`Error initializing the database: ${error.message}`);
     process.exit(1);
   }
 };
 
-// Route to get all jobs with pagination
+// ====================
+// API Routes
+// ====================
+
+// Get all jobs (ordered with "isNew" flag)
 app.get("/api/jobs", async (req, res) => {
   try {
-    // Calculate the threshold for a "new" job (created within the last 7 days)
     const currentTime = new Date();
     const sevenDaysAgo = new Date(currentTime.setDate(currentTime.getDate() - 7));
-
-    // Updated query without pagination
     const getAllJobsQuery = `
       SELECT *,
         CASE 
@@ -456,10 +448,7 @@ app.get("/api/jobs", async (req, res) => {
       FROM job 
       ORDER BY isNew DESC, createdAt DESC;
     `;
-
-    // Pass only the date parameter
     const jobs = await pool.query(getAllJobsQuery, [sevenDaysAgo.toISOString()]);
-
     if (jobs.rows.length > 0) {
       res.json(jobs.rows);
     } else {
@@ -471,12 +460,17 @@ app.get("/api/jobs", async (req, res) => {
   }
 });
 
-
-// Updated detail route with correct table name
-app.get("/api/jobs/:id", async (req, res) => {
+// Detail route for individual job using both id and slug
+app.get("/api/jobs/:id/:slug", async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT * FROM job WHERE id = $1", [req.params.id]);
-    rows.length ? res.json(rows[0]) : res.status(404).json({ error: "Job not found" });
+    const { id, slug } = req.params;
+    const { rows } = await pool.query("SELECT * FROM job WHERE id = $1", [id]);
+    if (rows.length) {
+      // If desired, you could check if rows[0].url !== slug and handle accordingly.
+      res.json(rows[0]);
+    } else {
+      res.status(404).json({ error: "Job not found" });
+    }
   } catch (err) {
     console.error("[API] Error:", err);
     res.status(500).json({ error: "Database error" });
@@ -488,10 +482,6 @@ app.use((req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
 });
-
-pool.connect()
-  .then(() => console.log("Connected to PostgreSQL database"))
-  .catch((err) => console.error("Database connection error:", err.stack));
 
 // Root route
 app.get("/", (req, res) => {
@@ -505,4 +495,8 @@ app.use((err, req, res, next) => {
 });
 
 // Connect to the database and start the server
+pool.connect()
+  .then(() => console.log("Connected to PostgreSQL database"))
+  .catch((err) => console.error("Database connection error:", err.stack));
+
 initializeDbAndServer();
