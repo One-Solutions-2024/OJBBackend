@@ -87,7 +87,7 @@ async function naukriParser(html) {
         const constructedUrl = `${companySlug}-${salarySlug}-${locationSlug}`;
 
         jobs.push({
-          companyname,
+          companyname: company,
           title,
           description,
           apply_link,
@@ -170,7 +170,7 @@ async function linkedInParser(html) {
         const constructedUrl = `${companySlug}-${salarySlug}-${locationSlug}`;
 
         jobs.push({
-          companyname,
+          companyname: company,
           title,
           description: description || "Check company website for details",
           apply_link: cleanUrl,
