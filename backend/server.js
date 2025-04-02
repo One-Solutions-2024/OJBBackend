@@ -324,6 +324,51 @@ app.use(cors({ origin: "*" }));
 // ====================
 // Database Initialization & Server Start
 // ====================
+// Create table for tracking clicks
+const initializeClickTracking = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_clicks (
+      job_id INT PRIMARY KEY REFERENCES job(id),
+      click_count INT DEFAULT 0
+    );
+  `);
+};
+initializeClickTracking()
+  .then(() => console.log("Click tracking table initialized"))
+  .catch((err) => console.error("Error initializing click tracking table:", err.message));
+
+// Track click endpoint
+app.post('/api/jobs/:id/click', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query(`
+      INSERT INTO job_clicks (job_id, click_count)
+      VALUES ($1, 1)
+      ON CONFLICT (job_id)
+      DO UPDATE SET click_count = job_clicks.click_count + 1
+    `, [id]);
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Click tracking error:', err);
+    res.status(500).json({ error: 'Failed to track click' });
+  }
+});
+
+// Get click count endpoint
+app.get('/api/jobs/:id/clicks', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT click_count FROM job_clicks WHERE job_id = $1',
+      [id]
+    );
+    res.json({ count: result.rows[0]?.click_count || 0 });
+  } catch (err) {
+    console.error('Click count error:', err);
+    res.status(500).json({ error: 'Failed to get click count' });
+  }
+});
+
 const initializeDbAndServer = async () => {
   try {
     await pool.query(`
@@ -345,6 +390,7 @@ const initializeDbAndServer = async () => {
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    
     const jobsCountResult = await pool.query("SELECT COUNT(*) as count FROM job;");
     const jobsCount = jobsCountResult.rows[0].count;
     if (jobsCount == 0) {
@@ -424,7 +470,7 @@ app.get("/api/jobs/:id/:slug", async (req, res) => {
   try {
     const { id, slug } = req.params;
     let { rows } = await pool.query(
-      "SELECT * FROM job WHERE id = $1 AND url = $2",
+      "SELECT j.*, COALESCE(c.click_count, 0) as click_count FROM job j LEFT JOIN job_clicks c ON j.id = c.job_id WHERE j.id = $1 AND j.url = $2",
       [id, slug]
     );
     if (rows.length === 0) {
