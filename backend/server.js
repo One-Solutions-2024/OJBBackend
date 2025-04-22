@@ -568,7 +568,7 @@ app.get('/api/admin/jobs',  async (req, res) => {
 });
 
 // Get a single job for editing
-app.get('/api/admin/jobs/:id', adminAuth, async (req, res) => {
+app.get('/api/admin/jobs/:id',  async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query(
