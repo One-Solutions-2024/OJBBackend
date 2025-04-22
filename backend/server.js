@@ -12,9 +12,8 @@ const PORT = process.env.PORT || 5000;
 
 // Initialize PostgreSQL pool using environment variable
 const pool = new Pool({
-  connectionString:
-    "postgresql://xrjobs_urp4_user:2lkJMgRTYllld0VMT3h7y3xYfL5SRmk1@dpg-cvajip7noe9s73fabcqg-a.oregon-postgres.render.com/xrjobs_urp4",
-  ssl: {
+  connectionString: process.env.DATABASE_URL,
+    ssl: {
     rejectUnauthorized: false,
   },
 });
@@ -485,6 +484,332 @@ app.get("/api/jobs/:id/:slug", async (req, res) => {
     console.error("[API] Error:", err);
     res.status(500).json({ error: "Database error" });
   }
+});
+
+// Search endpoint
+app.get('/api/search', async (req, res) => {
+  const { query, location } = req.query;
+  
+  try {
+    let sqlQuery = `SELECT * FROM job WHERE 1=1`;
+    const params = [];
+    
+    if (query) {
+      params.push(`%${query}%`);
+      sqlQuery += ` AND (title ILIKE $${params.length} OR description ILIKE $${params.length})`;
+    }
+    
+    if (location) {
+      params.push(`%${location}%`);
+      sqlQuery += ` AND location ILIKE $${params.length}`;
+    }
+    
+    sqlQuery += ` ORDER BY createdAt DESC`;
+    
+    const { rows } = await pool.query(sqlQuery, params);
+    res.json(rows);
+  } catch (err) {
+    console.error("Error searching jobs:", err);
+    res.status(500).json({ error: "Failed to search jobs" });
+  }
+});
+
+// Filter endpoint
+app.get('/api/filter', async (req, res) => {
+  const { job_type, experience, salary } = req.query;
+  
+  try {
+    let sqlQuery = `SELECT * FROM job WHERE 1=1`;
+    const params = [];
+    
+    if (job_type) {
+      params.push(`%${job_type}%`);
+      sqlQuery += ` AND job_type ILIKE $${params.length}`;
+    }
+    
+    if (experience) {
+      params.push(`%${experience}%`);
+      sqlQuery += ` AND experience ILIKE $${params.length}`;
+    }
+    
+    if (salary && salary !== 'Not disclosed') {
+      params.push(`%${salary}%`);
+      sqlQuery += ` AND salary ILIKE $${params.length}`;
+    }
+    
+    sqlQuery += ` ORDER BY createdAt DESC`;
+    
+    const { rows } = await pool.query(sqlQuery, params);
+    res.json(rows);
+  } catch (err) {
+    console.error("Error filtering jobs:", err);
+    res.status(500).json({ error: "Failed to filter jobs" });
+  }
+});
+
+
+// ====================
+// Admin Routes
+// ====================
+
+// Get all jobs for admin panel
+app.get('/api/admin/jobs',  async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT j.*, COALESCE(c.click_count, 0) AS click_count
+       FROM job j LEFT JOIN job_clicks c ON j.id = c.job_id
+       ORDER BY j.createdAt DESC;`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching admin jobs:", err);
+    res.status(500).json({ error: "Failed to fetch jobs" });
+  }
+});
+
+// Get a single job for editing
+app.get('/api/admin/jobs/:id', adminAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM job WHERE id = $1;`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Job not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error fetching job for edit:", err);
+    res.status(500).json({ error: "Failed to fetch job" });
+  }
+});
+
+// Create a new job
+app.post('/api/admin/jobs',  async (req, res) => {
+  const {
+    companyname,
+    title,
+    description,
+    apply_link,
+    image_link,
+    salary,
+    location,
+    job_type,
+    experience,
+    batch,
+    date_posted
+  } = req.body;
+  
+  try {
+    // Create URL slug
+    const slugify = str => str.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+    const url = `${slugify(companyname)}-${slugify(title)}-${slugify(location)}`;
+    
+    const { rows } = await pool.query(
+      `INSERT INTO job (
+        companyname, title, description, apply_link, image_link, url,
+        salary, location, job_type, experience, batch, date_posted, job_uploader
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *;`,
+      [
+        companyname,
+        title,
+        description,
+        apply_link,
+        image_link || "/company-logos/default.png",
+        url,
+        salary || "Not disclosed",
+        location,
+        job_type || "Full-time",
+        experience || "Not specified",
+        batch || "N/A",
+        date_posted || new Date().toISOString().split("T")[0],
+        "Admin"
+      ]
+    );
+    
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error("Error creating job:", err);
+    res.status(500).json({ error: "Failed to create job" });
+  }
+});
+
+// Update a job
+app.put('/api/admin/jobs/:id',  async (req, res) => {
+  const { id } = req.params;
+  const {
+    companyname,
+    title,
+    description,
+    apply_link,
+    image_link,
+    salary,
+    location,
+    job_type,
+    experience,
+    batch,
+    date_posted
+  } = req.body;
+  
+  try {
+    // Create URL slug if company, title or location changed
+    let url;
+    if (companyname && title && location) {
+      const slugify = str => str.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      url = `${slugify(companyname)}-${slugify(title)}-${slugify(location)}`;
+    }
+    
+    // Build the update query dynamically
+    let updateFields = [];
+    let params = [];
+    let paramIndex = 1;
+    
+    if (companyname) {
+      updateFields.push(`companyname = $${paramIndex++}`);
+      params.push(companyname);
+    }
+    
+    if (title) {
+      updateFields.push(`title = $${paramIndex++}`);
+      params.push(title);
+    }
+    
+    if (description) {
+      updateFields.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+    
+    if (apply_link) {
+      updateFields.push(`apply_link = $${paramIndex++}`);
+      params.push(apply_link);
+    }
+    
+    if (image_link) {
+      updateFields.push(`image_link = $${paramIndex++}`);
+      params.push(image_link);
+    }
+    
+    if (url) {
+      updateFields.push(`url = $${paramIndex++}`);
+      params.push(url);
+    }
+    
+    if (salary) {
+      updateFields.push(`salary = $${paramIndex++}`);
+      params.push(salary);
+    }
+    
+    if (location) {
+      updateFields.push(`location = $${paramIndex++}`);
+      params.push(location);
+    }
+    
+    if (job_type) {
+      updateFields.push(`job_type = $${paramIndex++}`);
+      params.push(job_type);
+    }
+    
+    if (experience) {
+      updateFields.push(`experience = $${paramIndex++}`);
+      params.push(experience);
+    }
+    
+    if (batch) {
+      updateFields.push(`batch = $${paramIndex++}`);
+      params.push(batch);
+    }
+    
+    if (date_posted) {
+      updateFields.push(`date_posted = $${paramIndex++}`);
+      params.push(date_posted);
+    }
+    
+    // Add the ID as the last parameter
+    params.push(id);
+    
+    // Execute the update query
+    const { rows } = await pool.query(
+      `UPDATE job SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *;`,
+      params
+    );
+    
+    if (!rows.length) return res.status(404).json({ error: 'Job not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error updating job:", err);
+    res.status(500).json({ error: "Failed to update job" });
+  }
+});
+
+// Delete a job
+app.delete('/api/admin/jobs/:id',  async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // First delete any click tracking for this job
+    await pool.query('DELETE FROM job_clicks WHERE job_id = $1', [id]);
+    
+    // Then delete the job
+    const { rowCount } = await pool.query('DELETE FROM job WHERE id = $1 RETURNING id', [id]);
+    
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    
+    res.json({ success: true, message: 'Job deleted successfully' });
+  } catch (err) {
+    console.error("Error deleting job:", err);
+    res.status(500).json({ error: "Failed to delete job" });
+  }
+});
+
+// Get job statistics
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    // Get total job count
+    const totalJobsResult = await pool.query('SELECT COUNT(*) as count FROM job');
+    const totalJobs = totalJobsResult.rows[0].count;
+    
+    // Get jobs added in the last 7 days
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+    const recentJobsResult = await pool.query(
+      'SELECT COUNT(*) as count FROM job WHERE createdAt >= $1',
+      [weekAgo]
+    );
+    const recentJobs = recentJobsResult.rows[0].count;
+    
+    // Get top 5 most clicked jobs
+    const topJobsResult = await pool.query(
+      `SELECT j.id, j.title, j.companyname, c.click_count
+       FROM job j
+       JOIN job_clicks c ON j.id = c.job_id
+       ORDER BY c.click_count DESC
+       LIMIT 5`
+    );
+    
+    // Get job source distribution
+    const sourcesResult = await pool.query(
+      `SELECT job_uploader, COUNT(*) as count
+       FROM job
+       GROUP BY job_uploader
+       ORDER BY count DESC`
+    );
+    
+    res.json({
+      totalJobs,
+      recentJobs,
+      topJobs: topJobsResult.rows,
+      sources: sourcesResult.rows
+    });
+  } catch (err) {
+    console.error("Error fetching stats:", err);
+    res.status(500).json({ error: "Failed to fetch statistics" });
+  }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Disable caching for all responses
